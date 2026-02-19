@@ -3,15 +3,15 @@ requires = ["flit_core>=3.4,<4"]
 build-backend = "flit_core.buildapi"
 
 [project]
-name = "example_package"
+name = "NMR-MD"
 dynamic = ["version"]
 
-description = "Short description of your package"
+description = "NMR restrained MD workflows"
 authors = [
-    { name = "Your Name", email = "you@example.com" },
+    { name = "Hima Bindu Kolli", email = "hima-bindu.kolli@stfc.ac.uk" },
 ]
 maintainers = [
-    { name = "Your Name", email = "you@example.com" }
+    { name = "Hima Bindu Kolli", email = "hima-bindu.kolli@stfc.ac.uk" }
 ]
 
 readme = "README.md"
