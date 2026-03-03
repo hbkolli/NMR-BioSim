@@ -3,7 +3,7 @@ requires = ["flit_core>=3.4,<4"]
 build-backend = "flit_core.buildapi"
 
 [project]
-name = "NMR-MD"
+name = "NMR_MD"
 dynamic = ["version"]
 
 description = "NMR restrained MD workflows"
@@ -34,7 +34,7 @@ classifiers = [
 keywords = ["template", "python", "package"]
 
 dependencies = [
-    # Add runtime dependencies here (empty for template)
+    "PyQt5>=5.15.11,<6.0",
 ]
 
 [project.urls]
@@ -72,7 +72,7 @@ docs = [
 
 # Run `example-cli` mapped to a Python function
 [project.scripts]
-# example-cli = "example_package.cli:main"  # Uncomment and modify if you add CLI scripts
+# NMR_MD = "NMR_MD.macro95_final"  # Uncomment and modify if you add CLI scripts
 
 #
 # Ruff configuration inside pyproject (recommended)
@@ -100,5 +100,5 @@ docstring-code-format = true
 
 [tool.pytest.ini_options]
 minversion = "9.0"
-addopts = "--cov=example_package --cov-report=term-missing"
+addopts = "--cov=NMR_MD --cov-report=term-missing"
 testpaths = ["tests"]

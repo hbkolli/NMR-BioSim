@@ -1,21 +1,21 @@
-# tests/test_example_package/test_example.py
+# tests/test_NMR_MD/test_example.py
 
-from example_package.example import placeholder
+# from NMR_MD.macro95_final import MdWorkflowDialog
 
 
-class TestExamplePackage:
+class TestNMRMD:
     """
-    Class-based placeholder tests for example_package.
+    Class-based placeholder tests for NMR_MD.
 
     - Demonstrates using a test class with pytest.
     - Can easily be extended with more methods for real tests.
     """
 
-    def test_placeholder(self):
-        """
-        Minimal placeholder test.
+    # def test_placeholder(self):
+    #     """
+    #     Minimal placeholder test.
 
-        - Verifies that the placeholder function runs.
-        - Serves as a template for adding future tests.
-        """
-        assert placeholder() is True
+    #     - Verifies that the placeholder function runs.
+    #     - Serves as a template for adding future tests.
+    #     """
+    #     assert MdWorkflowDialog() is not None

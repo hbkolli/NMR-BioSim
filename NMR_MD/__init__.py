@@ -1,5 +1,5 @@
 """
-example_package
+NMR_MD
 
 A short description of your package.
 """
