@@ -1105,7 +1105,7 @@ def _pdb_split_models(pdb_text):
     lines = pdb_text.splitlines(True)  # keep newlines
     models = []
     cur = []
-    in_model = False
+    # in_model = False
     saw_model = False
     for ln in lines:
         rec = ln[0:6].strip()
