@@ -1111,7 +1111,7 @@ def _pdb_split_models(pdb_text):
         rec = ln[0:6].strip()
         if rec == "MODEL":
             saw_model = True
-            in_model = True
+            # in_model = True
             if cur:
                 # flush any previous loose atoms (rare)
                 models.append(cur)
@@ -1121,7 +1121,7 @@ def _pdb_split_models(pdb_text):
             if cur:
                 models.append(cur)
                 cur = []
-            in_model = False
+            # in_model = False
             continue
         if rec in ("ATOM", "HETATM"):
             cur.append(ln)
@@ -1145,7 +1145,7 @@ def _pdb_atom_key(line):
     chain = line[21].strip()
     resid = line[22:26].strip()
     ins = line[26].strip()
-    alt = line[16].strip()  # altLoc
+    # alt = line[16].strip()  # altLoc
     # Ignore altLoc in key so we can intersect; alt handled by choosing first occurrence per key
     return (chain, resid, ins, resn, atom)
 
