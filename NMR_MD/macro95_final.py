@@ -12,25 +12,28 @@ NMR–MD GUI — (NMRbox)
 
 """
 
+import datetime
+import json
 import os
+import pathlib
 import re
 import shlex
-import re
+import shutil
+import stat
 import subprocess
-import pathlib, json, shutil, datetime, stat
-from PyQt5.QtCore import QProcess
-from PyQt5.QtWidgets import QTabWidget, QPlainTextEdit, QFileDialog
 
 from ccpn.ui.gui.popups.Dialog import CcpnDialog
-from ccpn.ui.gui.widgets.Frame import Frame
-from ccpn.ui.gui.widgets.CheckBox import CheckBox
-from ccpn.ui.gui.widgets.Label import Label
 from ccpn.ui.gui.widgets.Button import Button
-from ccpn.ui.gui.widgets.HLine import HLine
+from ccpn.ui.gui.widgets.CheckBox import CheckBox
 from ccpn.ui.gui.widgets.Entry import Entry, FloatEntry
+from ccpn.ui.gui.widgets.Frame import Frame
+from ccpn.ui.gui.widgets.HLine import HLine
+from ccpn.ui.gui.widgets.Label import Label
+from ccpn.ui.gui.widgets.MessageDialog import showWarning
 from ccpn.ui.gui.widgets.PulldownList import PulldownList
 from ccpn.ui.gui.widgets.RadioButtons import RadioButtons
-from ccpn.ui.gui.widgets.MessageDialog import showWarning
+from PyQt5.QtCore import QProcess
+from PyQt5.QtWidgets import QFileDialog, QPlainTextEdit, QTabWidget
 
 SHELL = "/bin/bash"
 DEFAULT_VENV = "/home/nmrbox/0063/hkolli/nmrmd_venv"
@@ -163,7 +166,7 @@ RC={"ASP":-1,"GLU":-1,"LYS":1,"ARG":1,"HID":0,"HIE":0,"HIP":1,"HIS":0}
 CAP={"ACE","NME"}; WAT={"HOH","WAT","SOL"}
 ION={"NA":1,"K":1,"LI":1,"CL":-1,"BR":-1,"I":-1,"MG":2,"CA":2,"ZN":2,"MN":2,"CO":2,"NI":2,"CU":2,"CD":2,"SR":2,"BA":2,"FE":2,"FE2":2,"FE3":3,"AL":3,"YB":3,"HG":2}
 
-def is_w(r): 
+def is_w(r):
   r=r.upper()
   return r in WAT or r.startswith("TIP")
 
@@ -562,7 +565,7 @@ minimization of solvent
   imin = 1, maxcyc = 1000,
   ncyc = 20, ntx = 1,
   ntwe = 0, ntwr = 500, ntpr = 50,
-  ntc = 1, ntf = 1, ntb = 1, ntp = 0,  
+  ntc = 1, ntf = 1, ntb = 1, ntp = 0,
   cut = 10.0,
   ntr=1, restraintmask="!@H=", restraint_wt=100.0,
   ioutfm=1, ntxo=2,
@@ -650,7 +653,7 @@ minimization of everything excluding backbone
   imin = 1, maxcyc = 1000,
   ncyc = 30, ntx = 1,
   ntwe = 0, ntwr = 500, ntpr = 50,
-  ntc = 1, ntf = 1, ntb = 1, ntp = 0,  
+  ntc = 1, ntf = 1, ntb = 1, ntp = 0,
   cut = 8.0,
   ntr=1, restraintmask="@CA,N,C", restraint_wt=10.0,
   ioutfm=1, ntxo=2,
@@ -1092,8 +1095,8 @@ if __name__ == "__main__":
 """
 
 
-
 # ---------------- MEDOID UTILITIES (NMR ensemble PDB) ----------------
+
 
 def _pdb_split_models(pdb_text):
     """Return list of model blocks (each block is list of ATOM/HETATM lines).
@@ -1102,13 +1105,13 @@ def _pdb_split_models(pdb_text):
     lines = pdb_text.splitlines(True)  # keep newlines
     models = []
     cur = []
-    in_model = False
+    # in_model = False
     saw_model = False
     for ln in lines:
         rec = ln[0:6].strip()
         if rec == "MODEL":
             saw_model = True
-            in_model = True
+            # in_model = True
             if cur:
                 # flush any previous loose atoms (rare)
                 models.append(cur)
@@ -1118,7 +1121,7 @@ def _pdb_split_models(pdb_text):
             if cur:
                 models.append(cur)
                 cur = []
-            in_model = False
+            # in_model = False
             continue
         if rec in ("ATOM", "HETATM"):
             cur.append(ln)
@@ -1133,6 +1136,7 @@ def _pdb_split_models(pdb_text):
     models = [m for m in models if m]
     return models
 
+
 def _pdb_atom_key(line):
     """Create a stable atom identifier key across models."""
     # PDB columns: atom name 12-16, resname 17-20, chain 21, resid 22-26, insertion 26
@@ -1141,16 +1145,20 @@ def _pdb_atom_key(line):
     chain = line[21].strip()
     resid = line[22:26].strip()
     ins = line[26].strip()
-    alt = line[16].strip()  # altLoc
+    # alt = line[16].strip()  # altLoc
     # Ignore altLoc in key so we can intersect; alt handled by choosing first occurrence per key
     return (chain, resid, ins, resn, atom)
 
+
 def _pdb_xyz(line):
     try:
-        x = float(line[30:38]); y = float(line[38:46]); z = float(line[46:54])
+        x = float(line[30:38])
+        y = float(line[38:46])
+        z = float(line[46:54])
         return (x, y, z)
     except Exception:
         return None
+
 
 def _is_protein_atom(line):
     # crude but effective: exclude waters/ions by resname; keep standard protein residues
@@ -1158,6 +1166,7 @@ def _is_protein_atom(line):
     if resn in ("HOH", "WAT", "SOL", "NA", "CL", "K", "CA", "MG", "ZN"):
         return False
     return True
+
 
 def _choose_sel(atom_name, mode):
     atom_name = atom_name.upper()
@@ -1168,9 +1177,11 @@ def _choose_sel(atom_name, mode):
     # heavy: exclude hydrogens
     return not atom_name.startswith("H")
 
+
 def _kabsch_rmsd(P, Q):
     """RMSD after optimal superposition of P onto Q. P,Q shape (n,3)."""
     import numpy as np
+
     P = np.asarray(P, dtype=float)
     Q = np.asarray(Q, dtype=float)
     Pc = P - P.mean(axis=0)
@@ -1184,20 +1195,25 @@ def _kabsch_rmsd(P, Q):
     diff = P_rot - Qc
     return float(np.sqrt((diff * diff).sum() / P.shape[0]))
 
+
 def _pick_medoid_model(pdb_path, sel_mode="bb", log_fn=None):
     """Return (medoid_index, models_lines). Index is 0-based."""
     txt = pathlib.Path(pdb_path).read_text()
     models = _pdb_split_models(txt)
     if len(models) <= 1:
         if log_fn:
-            log_fn("Medoid selection: input PDB contains a single model (no MODEL/ENDMDL ensemble detected); using as provided.")
+            log_fn(
+                "Medoid selection: input PDB contains a single model (no MODEL/ENDMDL ensemble detected); using as provided."
+            )
         return 0, models
 
     try:
         import numpy as np  # noqa
     except Exception:
         if log_fn:
-            log_fn("WARNING: numpy not available; cannot compute medoid. Using model 1.")
+            log_fn(
+                "WARNING: numpy not available; cannot compute medoid. Using model 1."
+            )
         return 0, models
 
     # Build per-model coordinate dicts
@@ -1225,7 +1241,9 @@ def _pick_medoid_model(pdb_path, sel_mode="bb", log_fn=None):
 
     if len(common) < 10:
         if log_fn:
-            log_fn(f"WARNING: Only {len(common)} common atoms across models for medoid; using model 1.")
+            log_fn(
+                f"WARNING: Only {len(common)} common atoms across models for medoid; using model 1."
+            )
         return 0, models
 
     keys = sorted(common)
@@ -1246,8 +1264,11 @@ def _pick_medoid_model(pdb_path, sel_mode="bb", log_fn=None):
     med = min(range(n), key=lambda i: sums[i])
     if log_fn:
         mean = sums[med] / (n - 1)
-        log_fn(f"Medoid selection: chose model {med+1}/{n} (mean pairwise RMSD {mean:.3f} Å) using '{sel_mode}' atoms.")
+        log_fn(
+            f"Medoid selection: chose model {med + 1}/{n} (mean pairwise RMSD {mean:.3f} Å) using '{sel_mode}' atoms."
+        )
     return med, models
+
 
 def _write_single_model_pdb(model_lines, out_path):
     with open(out_path, "w") as f:
@@ -1258,10 +1279,10 @@ def _write_single_model_pdb(model_lines, out_path):
 
 
 class MdWorkflowDialog(CcpnDialog):
-
     def __init__(self, parent=None, mainWindow=None, **kwds):
-        super().__init__(parent=parent, setLayout=True,
-                         windowTitle="NMR–MD Workflow (AMBER)", **kwds)
+        super().__init__(
+            parent=parent, setLayout=True, windowTitle="NMR–MD Workflow (AMBER)", **kwds
+        )
 
         self.proc = None
 
@@ -1292,13 +1313,13 @@ class MdWorkflowDialog(CcpnDialog):
     def _getWorkDir(self) -> str:
         """Return the workflow work directory from the Input tab."""
         try:
-            wd = (self.workDir.get() or '').strip()
+            wd = (self.workDir.get() or "").strip()
         except Exception:
             # Fallback for Qt widgets
             try:
-                wd = (self.workDir.text() or '').strip()
+                wd = (self.workDir.text() or "").strip()
             except Exception:
-                wd = ''
+                wd = ""
         return wd
 
     def _run(self, name, cmd, cwd):
@@ -1312,9 +1333,7 @@ class MdWorkflowDialog(CcpnDialog):
         self.proc.readyRead.connect(
             lambda: self._log(bytes(self.proc.readAll()).decode(errors="replace"))
         )
-        self.proc.finished.connect(
-            lambda c, s: self._log(f"[DONE:{name}]")
-        )
+        self.proc.finished.connect(lambda c, s: self._log(f"[DONE:{name}]"))
 
         self._log(f"[RUN:{name}]")
         self._log(cmd)
@@ -1377,9 +1396,9 @@ class MdWorkflowDialog(CcpnDialog):
 
         # Common CCPN widget APIs
         for name in (
-            "getIndex",           # some CCPN widgets
-            "getSelectedIndex",   # some RadioButtons variants
-            "currentIndex",       # Qt-style
+            "getIndex",  # some CCPN widgets
+            "getSelectedIndex",  # some RadioButtons variants
+            "currentIndex",  # Qt-style
         ):
             if hasattr(widget, name) and callable(getattr(widget, name)):
                 try:
@@ -1418,7 +1437,7 @@ class MdWorkflowDialog(CcpnDialog):
         for name in ("getText", "get", "currentText", "text"):
             if hasattr(widget, name) and callable(getattr(widget, name)):
                 try:
-                    v=getattr(widget, name)()
+                    v = getattr(widget, name)()
                     if v is None:
                         continue
                     return str(v)
@@ -1426,14 +1445,14 @@ class MdWorkflowDialog(CcpnDialog):
                     pass
         # Try mapping index to texts list
         try:
-            i=self._idx(widget, default=None)
-            if isinstance(i,int):
-                texts=None
-                for tname in ("texts","_texts"):
-                    if hasattr(widget,tname):
-                        texts=getattr(widget,tname)
+            i = self._idx(widget, default=None)
+            if isinstance(i, int):
+                texts = None
+                for tname in ("texts", "_texts"):
+                    if hasattr(widget, tname):
+                        texts = getattr(widget, tname)
                         break
-                if texts and 0<=i<len(texts):
+                if texts and 0 <= i < len(texts):
                     return str(texts[i])
         except Exception:
             pass
@@ -1462,7 +1481,11 @@ class MdWorkflowDialog(CcpnDialog):
                             if hasattr(widget, tname):
                                 texts = getattr(widget, tname)
                                 break
-                        if texts is None and hasattr(widget, "getTexts") and callable(getattr(widget, "getTexts")):
+                        if (
+                            texts is None
+                            and hasattr(widget, "getTexts")
+                            and callable(getattr(widget, "getTexts"))
+                        ):
                             try:
                                 texts = widget.getTexts()
                             except Exception:
@@ -1475,8 +1498,6 @@ class MdWorkflowDialog(CcpnDialog):
                 except Exception:
                     pass
         return default
-
-
 
     def _createInputTab(self):
         tab = Frame(setLayout=True)
@@ -1549,12 +1570,16 @@ class MdWorkflowDialog(CcpnDialog):
                 if hasattr(self, "medoidAtoms"):
                     idx = self._idx(self.medoidAtoms)
                     sel = "bb" if idx == 0 else ("ca" if idx == 1 else "heavy")
-                med_i, models = _pick_medoid_model(staged, sel_mode=sel, log_fn=self._log)
+                med_i, models = _pick_medoid_model(
+                    staged, sel_mode=sel, log_fn=self._log
+                )
                 med_path = os.path.join(wd, "source", "input_medoid.pdb")
                 _write_single_model_pdb(models[med_i], med_path)
                 shutil.copy2(med_path, staged)
         except Exception as e:
-            self._log(f"WARNING: Medoid selection failed; using provided PDB. Details: {e}")
+            self._log(
+                f"WARNING: Medoid selection failed; using provided PDB. Details: {e}"
+            )
 
         nef = self.nefFile.get()
         if nef:
@@ -1593,11 +1618,10 @@ class MdWorkflowDialog(CcpnDialog):
             tab,
             texts=["pdb2pqr + PropKa", "pypka (inactive)"],
             selectedInd=0,
-            grid=(row, 1)
+            grid=(row, 1),
         )
         row += 1
 
-        
         # Ensemble handling (NMR multi-model PDB)
         Label(tab, "Ensemble PDB:", grid=(row, 0))
         self.ensembleMode = RadioButtons(
@@ -1618,7 +1642,9 @@ class MdWorkflowDialog(CcpnDialog):
         row += 1
 
         Label(tab, "Box shape:", grid=(row, 0))
-        self.boxShape = PulldownList(tab, texts=["Truncated Octahedron", "Cube"], grid=(row, 1))
+        self.boxShape = PulldownList(
+            tab, texts=["Truncated Octahedron", "Cube"], grid=(row, 1)
+        )
         row += 1
 
         Label(tab, "Box buffer (Å):", grid=(row, 0))
@@ -1655,12 +1681,16 @@ class MdWorkflowDialog(CcpnDialog):
                 if hasattr(self, "medoidAtoms"):
                     idx = self._idx(self.medoidAtoms)
                     sel = "bb" if idx == 0 else ("ca" if idx == 1 else "heavy")
-                med_i, models = _pick_medoid_model(staged, sel_mode=sel, log_fn=self._log)
+                med_i, models = _pick_medoid_model(
+                    staged, sel_mode=sel, log_fn=self._log
+                )
                 med_path = os.path.join(wd, "source", "input_medoid.pdb")
                 _write_single_model_pdb(models[med_i], med_path)
                 shutil.copy2(med_path, staged)
         except Exception as e:
-            self._log(f"WARNING: Medoid selection failed; using provided PDB. Details: {e}")
+            self._log(
+                f"WARNING: Medoid selection failed; using provided PDB. Details: {e}"
+            )
         nef = self.nefFile.get()
         if nef:
             os.makedirs(os.path.join(wd, "source"), exist_ok=True)
@@ -1697,7 +1727,9 @@ class MdWorkflowDialog(CcpnDialog):
 
         row = 0
         Label(tab, "Include NMR restraints:", grid=(row, 0))
-        self.useRst = RadioButtons(tab, texts=["No", "Yes"], selectedInd=0, grid=(row, 1))
+        self.useRst = RadioButtons(
+            tab, texts=["No", "Yes"], selectedInd=0, grid=(row, 1)
+        )
         row += 1
 
         Label(tab, "CPUs for relaxation (pmemd.MPI):", grid=(row, 0))
@@ -1708,7 +1740,12 @@ class MdWorkflowDialog(CcpnDialog):
         self.minrelaxOut = Entry(tab, text="02_minrelax", grid=(row, 1))
         row += 1
 
-        Button(tab, "Run minimisation + relaxation", grid=(row, 1), callback=self._runMinRelax)
+        Button(
+            tab,
+            "Run minimisation + relaxation",
+            grid=(row, 1),
+            callback=self._runMinRelax,
+        )
         row += 1
 
         # ---------------- HTCondor (HPC) for Min/Relax ----------------
@@ -1719,18 +1756,29 @@ class MdWorkflowDialog(CcpnDialog):
         self.condorMinRelaxCpus = Entry(tab, text="16", grid=(row, 1))
         row += 1
 
-        Label(tab, 'HTCondor GPUs:', grid=(row, 0))
-        self.condorMinRelaxGpus = Entry(tab, text='0', grid=(row, 1))
+        Label(tab, "HTCondor GPUs:", grid=(row, 0))
+        self.condorMinRelaxGpus = Entry(tab, text="0", grid=(row, 1))
         row += 1
 
         Label(tab, "HTCondor memory:", grid=(row, 0))
         self.condorMinRelaxMem = Entry(tab, text="32 GB", grid=(row, 1))
         row += 1
 
-        Button(tab, "Generate HTCondor scripts", grid=(row, 0), callback=self._condorMinRelaxGenerate)
-        Button(tab, "Submit to HTCondor", grid=(row, 1), callback=self._condorMinRelaxSubmit)
-        Button(tab, "Check job status", grid=(row, 2), callback=self._condorMinRelaxStatus)
-
+        Button(
+            tab,
+            "Generate HTCondor scripts",
+            grid=(row, 0),
+            callback=self._condorMinRelaxGenerate,
+        )
+        Button(
+            tab,
+            "Submit to HTCondor",
+            grid=(row, 1),
+            callback=self._condorMinRelaxSubmit,
+        )
+        Button(
+            tab, "Check job status", grid=(row, 2), callback=self._condorMinRelaxStatus
+        )
 
     def _runMinRelax(self):
         wd = self.workDir.get()
@@ -1769,8 +1817,6 @@ class MdWorkflowDialog(CcpnDialog):
 
         self._run("MINRELAX", cmd, wd)
 
-
-    
     # ---------------- HTCondor (Min/Relax) ----------------
 
     def _condor_minrelax_dir(self, wd):
@@ -1794,7 +1840,11 @@ class MdWorkflowDialog(CcpnDialog):
         prmtop = os.path.join(prep_dir, "input_salt.prmtop")
         if not os.path.isfile(prmtop):
             # fallback: any prmtop
-            cands = [os.path.join(prep_dir, f) for f in os.listdir(prep_dir) if f.endswith(".prmtop")]
+            cands = [
+                os.path.join(prep_dir, f)
+                for f in os.listdir(prep_dir)
+                if f.endswith(".prmtop")
+            ]
             prmtop = cands[0] if cands else None
         if not prmtop or not os.path.isfile(prmtop):
             showWarning("Missing files", f"Cannot find prmtop in {prep_dir}")
@@ -1802,8 +1852,16 @@ class MdWorkflowDialog(CcpnDialog):
 
         # coordinate candidates
         coord = None
-        for fn in ("input_salt.rst7", "input_salt.inpcrd", "input_salt.crd", "input_salt.rst",
-                   "input_salt.rst7.gz", "input_salt.inpcrd.gz", "input_salt.crd.gz", "input_salt.rst.gz"):
+        for fn in (
+            "input_salt.rst7",
+            "input_salt.inpcrd",
+            "input_salt.crd",
+            "input_salt.rst",
+            "input_salt.rst7.gz",
+            "input_salt.inpcrd.gz",
+            "input_salt.crd.gz",
+            "input_salt.rst.gz",
+        ):
             p = os.path.join(prep_dir, fn)
             if os.path.isfile(p):
                 coord = p
@@ -1811,11 +1869,24 @@ class MdWorkflowDialog(CcpnDialog):
         if coord is None:
             # fallback: any rst7/inpcrd/crd
             for f in os.listdir(prep_dir):
-                if f.endswith((".rst7", ".inpcrd", ".crd", ".rst", ".rst7.gz", ".inpcrd.gz", ".crd.gz", ".rst.gz")):
+                if f.endswith(
+                    (
+                        ".rst7",
+                        ".inpcrd",
+                        ".crd",
+                        ".rst",
+                        ".rst7.gz",
+                        ".inpcrd.gz",
+                        ".crd.gz",
+                        ".rst.gz",
+                    )
+                ):
                     coord = os.path.join(prep_dir, f)
                     break
         if coord is None:
-            showWarning("Missing files", f"Cannot find starting coordinates in {prep_dir}")
+            showWarning(
+                "Missing files", f"Cannot find starting coordinates in {prep_dir}"
+            )
             return
 
         use_rst = 1 if self._idx(self.useRst) == 1 else 0
@@ -1826,14 +1897,24 @@ class MdWorkflowDialog(CcpnDialog):
             if os.path.isfile(alt):
                 rstfile = alt
             else:
-                showWarning("Missing files", f"Restraints requested but cannot find {prep_dir}/input.RST")
+                showWarning(
+                    "Missing files",
+                    f"Restraints requested but cannot find {prep_dir}/input.RST",
+                )
                 return
 
         # Copy inputs into the condor package preserving expected structure
-        shutil.copy2(prmtop, os.path.join(condor_dir, "01_preprocess", os.path.basename(prmtop)))
-        shutil.copy2(coord, os.path.join(condor_dir, "01_preprocess", os.path.basename(coord)))
+        shutil.copy2(
+            prmtop, os.path.join(condor_dir, "01_preprocess", os.path.basename(prmtop))
+        )
+        shutil.copy2(
+            coord, os.path.join(condor_dir, "01_preprocess", os.path.basename(coord))
+        )
         if use_rst:
-            shutil.copy2(rstfile, os.path.join(condor_dir, "01_preprocess", os.path.basename(rstfile)))
+            shutil.copy2(
+                rstfile,
+                os.path.join(condor_dir, "01_preprocess", os.path.basename(rstfile)),
+            )
 
         # Write scripts
         minrelax_path = os.path.join(condor_dir, "minrelax.sh")
@@ -1964,7 +2045,11 @@ echo "Job finished: $(date)" >> "$OUT/_job_meta.txt"
         # Submit file
         try:
             cpus = int(str(self.condorMinRelaxCpus.get()).strip())
-            gpus = int(getattr(self, "condorMinRelaxGpus", None).get() or 0) if hasattr(self, "condorMinRelaxGpus") else 0
+            gpus = (
+                int(getattr(self, "condorMinRelaxGpus", None).get() or 0)
+                if hasattr(self, "condorMinRelaxGpus")
+                else 0
+            )
             if cpus < 1:
                 cpus = 1
         except Exception:
@@ -1984,7 +2069,7 @@ echo "Job finished: $(date)" >> "$OUT/_job_meta.txt"
             f"+MaxRuntime             = {maxrt}",
             "",
             "# Pass NPROCS to wrapper (matches request_cpus)",
-            f'environment             = "NPROCS=$(request_cpus) NGPUS=$(request_gpus)"',
+            'environment             = "NPROCS=$(request_cpus) NGPUS=$(request_gpus)"',
             "getenv                  = True",
             "",
             "transfer_executable     = false",
@@ -1992,23 +2077,23 @@ echo "Job finished: $(date)" >> "$OUT/_job_meta.txt"
             "when_to_transfer_output = ON_EXIT",
             "",
             "# Inputs",
-            "transfer_input_files    = run_pipeline.sh, minrelax.sh, 01_preprocess/" + os.path.basename(prmtop) + ", 01_preprocess/" + os.path.basename(coord) + (", 01_preprocess/" + os.path.basename(rstfile) if use_rst else ""),
+            "transfer_input_files    = run_pipeline.sh, minrelax.sh, 01_preprocess/"
+            + os.path.basename(prmtop)
+            + ", 01_preprocess/"
+            + os.path.basename(coord)
+            + (", 01_preprocess/" + os.path.basename(rstfile) if use_rst else ""),
             "transfer_output_files   = OUT",
             "",
             "# Optional: only run on Amber-ready nodes",
             "# requirements            = (HasAMBER == true)",
-            "","requirements            = (AMBER =!= undefined) && (AMBERTOOLS =!= undefined) && regexp(\"nmrbox.org\", Machine)",
-            ""
-
+            "",
+            'requirements            = (AMBER =!= undefined) && (AMBERTOOLS =!= undefined) && regexp("nmrbox.org", Machine)',
             "log                     = condor.log",
             "output                  = condor.out",
             "error                   = condor.err",
             "",
             "queue 1",
-            ""
-
-
-
+            "",
         ]
         pathlib.Path(submit_path).write_text("\n".join(submit_lines))
 
@@ -2016,7 +2101,10 @@ echo "Job finished: $(date)" >> "$OUT/_job_meta.txt"
         self._log(f"[CONDOR:MINRELAX]  dir   = {condor_dir}")
         self._log(f"[CONDOR:MINRELAX]  submit= {os.path.basename(submit_path)}")
         self._log(f"[CONDOR:MINRELAX]  exe   = {os.path.basename(runner)}")
-        self._log(f"[CONDOR:MINRELAX]  inputs= {os.path.basename(prmtop)}, {os.path.basename(coord)}" + (f", {os.path.basename(rstfile)}" if use_rst else ""))
+        self._log(
+            f"[CONDOR:MINRELAX]  inputs= {os.path.basename(prmtop)}, {os.path.basename(coord)}"
+            + (f", {os.path.basename(rstfile)}" if use_rst else "")
+        )
 
     def _condorMinRelaxSubmit(self):
         wd = self.workDir.get()
@@ -2060,8 +2148,9 @@ echo "Job finished: $(date)" >> "$OUT/_job_meta.txt"
             self._run("CONDOR_HIST", f"condor_history -limit 5 {cluster}", condor_dir)
         else:
             self._run("CONDOR_Q", "condor_q -submitter $USER", condor_dir)
-            self._log("[CONDOR:MINRELAX] Tip: open condor.log to find the cluster id if needed.")
-
+            self._log(
+                "[CONDOR:MINRELAX] Tip: open condor.log to find the cluster id if needed."
+            )
 
     # ---------------- PRODUCTION TAB ----------------
 
@@ -2071,7 +2160,9 @@ echo "Job finished: $(date)" >> "$OUT/_job_meta.txt"
 
         row = 0
         Label(tab, "Include NMR restraints (DISANG):", grid=(row, 0))
-        self.prodUseRst = RadioButtons(tab, texts=["No", "Yes"], selectedInd=0, grid=(row, 1), gridSpan=(1, 2))
+        self.prodUseRst = RadioButtons(
+            tab, texts=["No", "Yes"], selectedInd=0, grid=(row, 1), gridSpan=(1, 2)
+        )
         row += 1
 
         Label(tab, "Local CPUs:", grid=(row, 0))
@@ -2099,7 +2190,13 @@ echo "Job finished: $(date)" >> "$OUT/_job_meta.txt"
         self.prodOut = Entry(tab, text="03_production", grid=(row, 1))
         row += 1
 
-        Button(tab, "Run production locally", callback=self._runProduction, grid=(row, 0), gridSpan=(1, 3))
+        Button(
+            tab,
+            "Run production locally",
+            callback=self._runProduction,
+            grid=(row, 0),
+            gridSpan=(1, 3),
+        )
         row += 1
 
         HLine(tab, grid=(row, 0), gridSpan=(1, 3))
@@ -2121,99 +2218,117 @@ echo "Job finished: $(date)" >> "$OUT/_job_meta.txt"
         self.prodCondorMaxRt = Entry(tab, text="259200", grid=(row, 1))
         row += 1
 
-        Button(tab, "Generate HTCondor scripts", callback=self._condorProdGenerate, grid=(row, 0))
-        Button(tab, "Submit to HTCondor", callback=self._condorProdSubmit, grid=(row, 1))
+        Button(
+            tab,
+            "Generate HTCondor scripts",
+            callback=self._condorProdGenerate,
+            grid=(row, 0),
+        )
+        Button(
+            tab, "Submit to HTCondor", callback=self._condorProdSubmit, grid=(row, 1)
+        )
         Button(tab, "Check job status", callback=self._condorProdStatus, grid=(row, 2))
 
     def _browseProdStart(self):
-        f, _ = QFileDialog.getOpenFileName(self, "Select restart (rst7)", filter="Restart (*.rst7 *.rst *.nc);;All (*.*)")
+        f, _ = QFileDialog.getOpenFileName(
+            self,
+            "Select restart (rst7)",
+            filter="Restart (*.rst7 *.rst *.nc);;All (*.*)",
+        )
         if f:
             self.prodStartRst.setText(f)
 
-
     def _runProduction(self):
         try:
-                wd = self._getWorkDir()
-                if not wd:
-                    self._log('ERROR: Work dir is empty (set it in Input tab)')
-                    return
+            wd = self._getWorkDir()
+            if not wd:
+                self._log("ERROR: Work dir is empty (set it in Input tab)")
+                return
 
-                # write helper script
-                outsub = str(self.prodOut.get()).strip() or "03_production"
-                script_path = os.path.join(wd, "production.sh")
-                try:
-                    with open(script_path, "w") as fh:
-                        fh.write(PROD_SH + "\n")
-                    os.chmod(script_path, 0o755)
-                except Exception as e:
-                    self._log(f"ERROR: could not write production.sh: {e}")
-                    return
+            # write helper script
+            outsub = str(self.prodOut.get()).strip() or "03_production"
+            script_path = os.path.join(wd, "production.sh")
+            try:
+                with open(script_path, "w") as fh:
+                    fh.write(PROD_SH + "\n")
+                os.chmod(script_path, 0o755)
+            except Exception as e:
+                self._log(f"ERROR: could not write production.sh: {e}")
+                return
 
-                # Local CPUs
-                try:
-                    np = int(str(self.prodNCpu.get()).strip())
-                    if np < 1:
-                        np = 1
-                except Exception:
+            # Local CPUs
+            try:
+                np = int(str(self.prodNCpu.get()).strip())
+                if np < 1:
                     np = 1
+            except Exception:
+                np = 1
 
-                # Local GPUs (0/1 only)
-                try:
-                    ngpus = int(str(self.prodLocalGpus.get()).strip())
-                    if ngpus < 0:
-                        ngpus = 0
-                    if ngpus > 1:
-                        ngpus = 1
-                except Exception:
+            # Local GPUs (0/1 only)
+            try:
+                ngpus = int(str(self.prodLocalGpus.get()).strip())
+                if ngpus < 0:
                     ngpus = 0
+                if ngpus > 1:
+                    ngpus = 1
+            except Exception:
+                ngpus = 0
 
-                # Steps / dt
-                try:
-                    nstlim = int(str(self.prodSteps.get()).strip())
-                    if nstlim < 1:
-                        nstlim = 250000
-                except Exception:
+            # Steps / dt
+            try:
+                nstlim = int(str(self.prodSteps.get()).strip())
+                if nstlim < 1:
                     nstlim = 250000
+            except Exception:
+                nstlim = 250000
 
-                try:
-                    dt = float(str(self.prodDt.get()).strip())
-                    if dt <= 0.0:
-                        dt = 0.002
-                except Exception:
+            try:
+                dt = float(str(self.prodDt.get()).strip())
+                if dt <= 0.0:
                     dt = 0.002
+            except Exception:
+                dt = 0.002
 
-                use_rst = "1" if self.prodUseRst.get() == 1 else "0"
+            use_rst = "1" if self.prodUseRst.get() == 1 else "0"
 
-                start_rst = str(self.prodStartRst.get()).strip()
+            start_rst = str(self.prodStartRst.get()).strip()
 
-                cmd = [
-                    "bash", script_path,
-                    "--workdir", wd,
-                    "--np", str(np),
-                    "--ngpus", str(ngpus),
-                    "--temp", "300.0",
-                    "--nstlim", str(nstlim),
-                    "--dt", str(dt),
-                    "--use_rst", use_rst,
-                    "--outdir", outsub,
-                ]
-                if start_rst:
-                    cmd += ["--start_rst", start_rst]
+            cmd = [
+                "bash",
+                script_path,
+                "--workdir",
+                wd,
+                "--np",
+                str(np),
+                "--ngpus",
+                str(ngpus),
+                "--temp",
+                "300.0",
+                "--nstlim",
+                str(nstlim),
+                "--dt",
+                str(dt),
+                "--use_rst",
+                use_rst,
+                "--outdir",
+                outsub,
+            ]
+            if start_rst:
+                cmd += ["--start_rst", start_rst]
 
-                self._runCommand(cmd, tag="PRODUCTION_LOCAL")
-
-
+            self._runCommand(cmd, tag="PRODUCTION_LOCAL")
 
         except Exception as e:
             self._log(f"[PROD:CONDOR] ERROR in _runProduction: {e}")
             raise
+
     def _condor_prod_dir(self, wd):
         return os.path.join(wd, "03_production", "htcondor_production")
 
     def _condorProdGenerate(self):
         wd = self._getWorkDir()
         if not wd:
-            self._log('ERROR: Work dir is empty (set it in Input tab)')
+            self._log("ERROR: Work dir is empty (set it in Input tab)")
             return
 
         def _int(widget, default, minv=None):
@@ -2324,7 +2439,7 @@ echo "Job finished: $(date)" >> "$OUT/_job_meta.txt"
             "transfer_input_files    = run_pipeline.sh, production.sh, start.rst7, 01_preprocess/input_salt.prmtop, 01_preprocess/input_salt.inpcrd, 01_preprocess/input.RST",
             "transfer_output_files   = OUT",
             "",
-            "requirements            = (AMBER =!= undefined) && (AMBERTOOLS =!= undefined) && regexp(\"nmrbox.org\", Machine)",
+            'requirements            = (AMBER =!= undefined) && (AMBERTOOLS =!= undefined) && regexp("nmrbox.org", Machine)',
             "log                     = condor.log",
             "output                  = condor.out",
             "error                   = condor.err",
@@ -2340,14 +2455,16 @@ echo "Job finished: $(date)" >> "$OUT/_job_meta.txt"
     def _condorProdSubmit(self):
         wd = self._getWorkDir()
         if not wd:
-            self._log('ERROR: Work dir is empty (set it in Input tab)')
+            self._log("ERROR: Work dir is empty (set it in Input tab)")
             return
         htdir = self._condor_prod_dir(wd)
         submit_path = os.path.join(htdir, "amber_pmemd_production.submit")
         if not os.path.isfile(submit_path):
             self._log("ERROR: submit file not found. Generate HTCondor scripts first.")
             return
-        self._runCommand(["condor_submit", submit_path], tag="CONDOR_PRODUCTION", cwd=htdir)
+        self._runCommand(
+            ["condor_submit", submit_path], tag="CONDOR_PRODUCTION", cwd=htdir
+        )
 
     def _condorProdStatus(self):
         self._run("CONDOR_Q", "condor_q -submitter $USER")
@@ -2373,12 +2490,16 @@ echo "Job finished: $(date)" >> "$OUT/_job_meta.txt"
         row += 1
 
         Label(tab, "Atom selection:", grid=(row, 0))
-        self.anSel = PulldownList(tab, texts=[
-            "Backbone (C,CA,N,O)",
-            "C-alpha (CA)",
-            "Protein heavy atoms",
-            "All protein atoms"
-        ], grid=(row, 1))
+        self.anSel = PulldownList(
+            tab,
+            texts=[
+                "Backbone (C,CA,N,O)",
+                "C-alpha (CA)",
+                "Protein heavy atoms",
+                "All protein atoms",
+            ],
+            grid=(row, 1),
+        )
         row += 1
 
         Label(tab, "Output folder name:", grid=(row, 0))
@@ -2388,13 +2509,22 @@ echo "Job finished: $(date)" >> "$OUT/_job_meta.txt"
         self.doRmsd = CheckBox(tab, text="RMSD", checked=True, grid=(row, 0))
         self.doRmsf = CheckBox(tab, text="RMSF", checked=True, grid=(row, 1))
         row += 1
-        self.doViol = CheckBox(tab, text="Restraint violations (from mdout)", checked=True, grid=(row, 0))
-        self.doPlots = CheckBox(tab, text="Export plots (PNG)", checked=True, grid=(row, 1))
+        self.doViol = CheckBox(
+            tab, text="Restraint violations (from mdout)", checked=True, grid=(row, 0)
+        )
+        self.doPlots = CheckBox(
+            tab, text="Export plots (PNG)", checked=True, grid=(row, 1)
+        )
         row += 1
 
         Button(tab, "Run selected analyses", grid=(row, 1), callback=self._runAnalysis)
         row += 1
-        Button(tab, "View trajectory in PyMOL", grid=(row, 1), callback=self._viewTrajectoryInPymol)
+        Button(
+            tab,
+            "View trajectory in PyMOL",
+            grid=(row, 1),
+            callback=self._viewTrajectoryInPymol,
+        )
 
         self._setAnalysisDefaults()
 
@@ -2413,17 +2543,25 @@ echo "Job finished: $(date)" >> "$OUT/_job_meta.txt"
             self.anMdout.setText(mdout)
 
     def _browseAnPrmtop(self):
-        f, _ = QFileDialog.getOpenFileName(self, "Select topology", filter="Topology (*.prmtop *.parm7);;All (*.*)")
+        f, _ = QFileDialog.getOpenFileName(
+            self, "Select topology", filter="Topology (*.prmtop *.parm7);;All (*.*)"
+        )
         if f:
             self.anPrmtop.setText(f)
 
     def _browseAnTraj(self):
-        f, _ = QFileDialog.getOpenFileName(self, "Select trajectory", filter="Trajectory (*.nc *.mdcrd *.crd *.dcd *.xtc);;All (*.*)")
+        f, _ = QFileDialog.getOpenFileName(
+            self,
+            "Select trajectory",
+            filter="Trajectory (*.nc *.mdcrd *.crd *.dcd *.xtc);;All (*.*)",
+        )
         if f:
             self.anTraj.setText(f)
 
     def _browseAnMdout(self):
-        f, _ = QFileDialog.getOpenFileName(self, "Select mdout", filter="Output (*.out *.mdout *.log);;All (*.*)")
+        f, _ = QFileDialog.getOpenFileName(
+            self, "Select mdout", filter="Output (*.out *.mdout *.log);;All (*.*)"
+        )
         if f:
             self.anMdout.setText(f)
 
@@ -2437,7 +2575,6 @@ echo "Job finished: $(date)" >> "$OUT/_job_meta.txt"
         else:
             return ":1-999"
 
-    
     def _runAnalysis(self):
         # Robust analysis runner with defensive logging
         self._log("[ANALYSIS] Button clicked")
@@ -2445,13 +2582,19 @@ echo "Job finished: $(date)" >> "$OUT/_job_meta.txt"
             # --- Resolve workdir (allow analysis-only use) ---
             wd = (self.workDir.get() or "").strip()
             if not wd:
-                self._log("[ANALYSIS] Workdir is empty; trying to infer from provided file paths")
+                self._log(
+                    "[ANALYSIS] Workdir is empty; trying to infer from provided file paths"
+                )
                 cand_paths = []
-                for w in (getattr(self, 'anPrmtop', None), getattr(self, 'anTraj', None), getattr(self, 'anMdout', None)):
+                for w in (
+                    getattr(self, "anPrmtop", None),
+                    getattr(self, "anTraj", None),
+                    getattr(self, "anMdout", None),
+                ):
                     try:
-                        p = (w.get() or '').strip() if w is not None else ''
+                        p = (w.get() or "").strip() if w is not None else ""
                     except Exception:
-                        p = ''
+                        p = ""
                     if p:
                         cand_paths.append(os.path.abspath(os.path.expanduser(p)))
                 if cand_paths:
@@ -2468,12 +2611,21 @@ echo "Job finished: $(date)" >> "$OUT/_job_meta.txt"
                         pass
                     self._log(f"[ANALYSIS] Inferred workdir: {wd}")
                 else:
-                    showWarning("Missing input", "Set Working directory or provide prmtop/trajectory paths so I can infer it.")
-                    self._log("[ANALYSIS] No workdir and no file paths to infer from; aborting")
+                    showWarning(
+                        "Missing input",
+                        "Set Working directory or provide prmtop/trajectory paths so I can infer it.",
+                    )
+                    self._log(
+                        "[ANALYSIS] No workdir and no file paths to infer from; aborting"
+                    )
                     return
 
             # Create output folder early so user sees something even if later checks fail
-            outdir = (self.anOut.get() or "04_analysis").strip() if hasattr(self, "anOut") else "04_analysis"
+            outdir = (
+                (self.anOut.get() or "04_analysis").strip()
+                if hasattr(self, "anOut")
+                else "04_analysis"
+            )
             abs_outdir = os.path.join(wd, outdir)
             os.makedirs(abs_outdir, exist_ok=True)
             self._log(f"[ANALYSIS] Output directory: {abs_outdir}")
@@ -2486,9 +2638,13 @@ echo "Job finished: $(date)" >> "$OUT/_job_meta.txt"
             def _guess(p):
                 return p if p and os.path.exists(p) else ""
 
-            prmtop = (self.anPrmtop.get() or "").strip() if hasattr(self, "anPrmtop") else ""
-            traj   = (self.anTraj.get() or "").strip() if hasattr(self, "anTraj") else ""
-            mdout  = (self.anMdout.get() or "").strip() if hasattr(self, "anMdout") else ""
+            prmtop = (
+                (self.anPrmtop.get() or "").strip() if hasattr(self, "anPrmtop") else ""
+            )
+            traj = (self.anTraj.get() or "").strip() if hasattr(self, "anTraj") else ""
+            mdout = (
+                (self.anMdout.get() or "").strip() if hasattr(self, "anMdout") else ""
+            )
 
             # Common defaults if not specified
             if not prmtop:
@@ -2499,11 +2655,23 @@ echo "Job finished: $(date)" >> "$OUT/_job_meta.txt"
                 mdout = _guess(os.path.join(wd, "03_production", "prod.out"))
 
             # Write back guessed paths so user can see them
-            if hasattr(self, "anPrmtop") and prmtop and not (self.anPrmtop.get() or "").strip():
+            if (
+                hasattr(self, "anPrmtop")
+                and prmtop
+                and not (self.anPrmtop.get() or "").strip()
+            ):
                 self.anPrmtop.setText(prmtop)
-            if hasattr(self, "anTraj") and traj and not (self.anTraj.get() or "").strip():
+            if (
+                hasattr(self, "anTraj")
+                and traj
+                and not (self.anTraj.get() or "").strip()
+            ):
                 self.anTraj.setText(traj)
-            if hasattr(self, "anMdout") and mdout and not (self.anMdout.get() or "").strip():
+            if (
+                hasattr(self, "anMdout")
+                and mdout
+                and not (self.anMdout.get() or "").strip()
+            ):
                 self.anMdout.setText(mdout)
 
             self._log(f"[ANALYSIS] prmtop: {prmtop}")
@@ -2530,9 +2698,13 @@ echo "Job finished: $(date)" >> "$OUT/_job_meta.txt"
             self._log(f"[ANALYSIS] cpptraj selection mask: {sel_mask}")
 
             # --- Ensure scripts exist ---
-            analysis_sh = self._ensure_script(wd, "analysis_cpptraj.sh", ANALYSIS_CPPTRAJ_SH)
-            parser_py   = self._ensure_script(wd, "parse_violations.py", PARSER_VIOLATIONS_PY)
-            plot_py     = self._ensure_script(wd, "plot_analysis.py", PLOT_ANALYSIS_PY)
+            analysis_sh = self._ensure_script(
+                wd, "analysis_cpptraj.sh", ANALYSIS_CPPTRAJ_SH
+            )
+            parser_py = self._ensure_script(
+                wd, "parse_violations.py", PARSER_VIOLATIONS_PY
+            )
+            plot_py = self._ensure_script(wd, "plot_analysis.py", PLOT_ANALYSIS_PY)
 
             # --- Determine what to run (defensive against missing widgets) ---
             def _checked(name):
@@ -2547,7 +2719,9 @@ echo "Job finished: $(date)" >> "$OUT/_job_meta.txt"
             do_viol = _checked("doViol")
             do_plots = _checked("doPlots")
 
-            self._log(f"[ANALYSIS] selected -> RMSD:{do_rmsd} RMSF:{do_rmsf} Violations:{do_viol} Plots:{do_plots}")
+            self._log(
+                f"[ANALYSIS] selected -> RMSD:{do_rmsd} RMSF:{do_rmsf} Violations:{do_viol} Plots:{do_plots}"
+            )
 
             # --- Build commands ---
             cmds = []
@@ -2569,7 +2743,9 @@ echo "Job finished: $(date)" >> "$OUT/_job_meta.txt"
                 venv = DEFAULT_VENV
 
             venv_activate = ""
-            if venv and os.path.exists(os.path.join(os.path.expanduser(venv), "bin", "activate")):
+            if venv and os.path.exists(
+                os.path.join(os.path.expanduser(venv), "bin", "activate")
+            ):
                 venv_activate = f"source '{os.path.expanduser(venv)}/bin/activate' && "
 
             if do_viol:
@@ -2578,7 +2754,9 @@ echo "Job finished: $(date)" >> "$OUT/_job_meta.txt"
                         f"{venv_activate}python3 '{parser_py}' --mdout '{mdout}' --out '{os.path.join(abs_outdir, 'violations.csv')}'"
                     )
                 else:
-                    self._log("[ANALYSIS] NOTE: mdout not found; skipping violation parsing")
+                    self._log(
+                        "[ANALYSIS] NOTE: mdout not found; skipping violation parsing"
+                    )
 
             if do_plots:
                 # Use system python for plotting: matplotlib may be available in the system environment
@@ -2586,8 +2764,13 @@ echo "Job finished: $(date)" >> "$OUT/_job_meta.txt"
                 cmds.append(f"python3 '{plot_py}' --analysis_dir '{abs_outdir}'")
 
             if not cmds:
-                self._log("[ANALYSIS] Nothing selected to run. Tick RMSD/RMSF/Violations/Plots.")
-                showWarning("Nothing selected", "Tick at least one analysis option (RMSD/RMSF/Violations/Plots).")
+                self._log(
+                    "[ANALYSIS] Nothing selected to run. Tick RMSD/RMSF/Violations/Plots."
+                )
+                showWarning(
+                    "Nothing selected",
+                    "Tick at least one analysis option (RMSD/RMSF/Violations/Plots).",
+                )
                 return
 
             cmd = "set -e; " + " ; ".join(cmds)
@@ -2596,10 +2779,14 @@ echo "Job finished: $(date)" >> "$OUT/_job_meta.txt"
 
         except Exception as e:
             import traceback
+
             tb = traceback.format_exc()
             self._log("[ANALYSIS] EXCEPTION: " + str(e))
             self._log(tb)
-            showWarning("Analysis error", f"Analysis crashed with:\n{e}\n\nSee Command log for traceback.")
+            showWarning(
+                "Analysis error",
+                f"Analysis crashed with:\n{e}\n\nSee Command log for traceback.",
+            )
 
     def _viewTrajectoryInPymol(self):
         """Launch PyMOL to visualise the provided AMBER trajectory.
@@ -2615,7 +2802,9 @@ echo "Job finished: $(date)" >> "$OUT/_job_meta.txt"
         self._log("[PYMOL] Button clicked")
         try:
             wd = (self.workDir.get() or "").strip()
-            prmtop = (self.anPrmtop.get() or "").strip() if hasattr(self, "anPrmtop") else ""
+            prmtop = (
+                (self.anPrmtop.get() or "").strip() if hasattr(self, "anPrmtop") else ""
+            )
             traj = (self.anTraj.get() or "").strip() if hasattr(self, "anTraj") else ""
 
             # Infer workdir if not set
@@ -2623,12 +2812,22 @@ echo "Job finished: $(date)" >> "$OUT/_job_meta.txt"
                 for p in (prmtop, traj):
                     if p:
                         wd = pathlib.Path(p).resolve().parent.as_posix()
-                        if pathlib.Path(wd).name in ("01_preprocess", "02_minrelax", "03_production", "04_analysis", "05_analysis", "scripts"):
+                        if pathlib.Path(wd).name in (
+                            "01_preprocess",
+                            "02_minrelax",
+                            "03_production",
+                            "04_analysis",
+                            "05_analysis",
+                            "scripts",
+                        ):
                             wd = pathlib.Path(wd).parent.as_posix()
                         break
 
             if not wd:
-                showWarning("PyMOL", "Working directory is not set and cannot be inferred.\nPlease set Workdir or provide valid prmtop/traj paths.")
+                showWarning(
+                    "PyMOL",
+                    "Working directory is not set and cannot be inferred.\nPlease set Workdir or provide valid prmtop/traj paths.",
+                )
                 return
 
             if not prmtop or not os.path.isfile(prmtop):
@@ -2664,7 +2863,9 @@ echo "Job finished: $(date)" >> "$OUT/_job_meta.txt"
 
             # Run cpptraj synchronously (QProcess is async and can trigger a premature existence check)
             try:
-                proc = subprocess.run([SHELL, '-lc', cpp_cmd], cwd=wd, text=True, capture_output=True)
+                proc = subprocess.run(
+                    [SHELL, "-lc", cpp_cmd], cwd=wd, text=True, capture_output=True
+                )
                 if proc.stdout:
                     for line in proc.stdout.splitlines():
                         self._log(line)
@@ -2672,14 +2873,20 @@ echo "Job finished: $(date)" >> "$OUT/_job_meta.txt"
                     for line in proc.stderr.splitlines():
                         self._log(line)
                 if proc.returncode != 0:
-                    showWarning('PyMOL', f"cpptraj failed (exit code {proc.returncode}).\nSee Command log for details.")
+                    showWarning(
+                        "PyMOL",
+                        f"cpptraj failed (exit code {proc.returncode}).\nSee Command log for details.",
+                    )
                     return
             except Exception as e:
-                showWarning('PyMOL', f"cpptraj execution failed:\n{e}")
+                showWarning("PyMOL", f"cpptraj execution failed:\n{e}")
                 return
 
             if not os.path.isfile(frame0_pdb) or os.path.getsize(frame0_pdb) < 100:
-                showWarning("PyMOL", f"frame0.pdb was not generated correctly:\n{frame0_pdb}\n\nCheck Command log for cpptraj errors.")
+                showWarning(
+                    "PyMOL",
+                    f"frame0.pdb was not generated correctly:\n{frame0_pdb}\n\nCheck Command log for cpptraj errors.",
+                )
                 return
 
             # 2) Write PyMOL script that loads frame0.pdb then the NetCDF trajectory
@@ -2716,17 +2923,21 @@ zoom mol
 
         except Exception as e:
             import traceback
+
             tb = traceback.format_exc()
             self._log("[PYMOL] EXCEPTION: " + str(e))
             self._log(tb)
-            showWarning("PyMOL error", f"Could not start PyMOL:\n{e}\n\nSee Command log for details.")
-
+            showWarning(
+                "PyMOL error",
+                f"Could not start PyMOL:\n{e}\n\nSee Command log for details.",
+            )
 
 
 try:
     mw = mainWindow
 except NameError:
     from ccpn.framework.Application import getApplication
+
     mw = getApplication().mainWindow
 
 popup = MdWorkflowDialog(parent=mw, mainWindow=mw)
